@@ -1,0 +1,78 @@
+#!/usr/bin/expect
+
+set timeout 60
+
+set USER [lindex $argv 0]
+set PASS [lindex $argv 1]
+set MACHINE_NAME [lindex $argv 2]
+set DISK_PATH [lindex $argv 3]
+set SSH_PORT [lindex $argv 4]
+set ROOT_DIR [lindex $argv 5]
+set SSH_PUB_KEY_PATH [lindex $argv 6]
+set SHARED_SCRIPTS_DIR [lindex $argv 7]
+
+
+set fd [open $SSH_PUB_KEY_PATH]
+gets $fd pubkey
+close $fd
+
+spawn bash -c \
+    "source $SHARED_SCRIPTS_DIR/functions.sh && \
+    start_cloud_machine $MACHINE_NAME $DISK_PATH $SSH_PORT"
+
+expect "localhost login:" { send "root\r" }
+
+
+
+expect "# " { send "adduser $USER\r" }
+expect "*New password: " { send "$PASS\r" }
+expect "*Retype new password: " { send "$PASS\r" }
+expect "*Full*" { send "\r" }
+expect "*Room*" { send "\r" }
+expect "*Work*" { send "\r" }
+expect "*Home*" { send "\r" }
+expect "*Other*" { send "\r" }
+expect "*information*" { send "Y\r" }
+
+expect "# " { send "adduser $USER sudo\r" }
+expect "# " { send "passwd -d $USER\r" }
+
+send " mkdir -p /home/$USER/.ssh\r"
+send " cat >> /home/$USER/.ssh/authorized_keys <<EOF\r$pubkey\rEOF\r"
+send " chown -R $USER:$USER /home/$USER/.ssh\r"
+send " chmod 700 /home/$USER/.ssh\r"
+send " chmod 644 /home/$USER/.ssh/authorized_keys\r"
+
+expect "# " { send "apt update\r" }
+expect "# " { send "apt install openssh-server\r" }
+expect "*continue?*" { send "Y\r" }
+
+expect "# " { send "shutdown now\r" }
+
+### ENABLE THESE FOR PASSWORD AUTHENTICATION ###
+
+#expect "# " { send "rm -v /etc/ssh/ssh_host_*\r" }
+#expect "# " { send "ssh-keygen -A\r" }
+#expect "# " { send "dpkg-reconfigure openssh-server\r" }
+#expect "# " { send "echo \"PasswordAuthentication yes\" >> /etc/ssh/sshd_config.d/$USER.conf\r" }
+#expect "# " { send "echo \"KbdInteractiveAuthentication yes\" >> /etc/ssh/sshd_config.d/$USER.conf\r" }
+
+#expect "# " { send "echo \"PasswordAuthentication yes\" >> /etc/ssh/ssh_config.d/$USER.conf\r" }
+#expect "# " { send "echo \"KbdInteractiveAuthentication yes\" >> /etc/ssh/ssh_config.d/$USER.conf\r" }
+
+#expect "# " { send "systemctl restart ssh.service\r" }
+#expect "# " { send "systemctl enable ssh.service\r" }
+
+######
+
+
+
+
+
+
+
+
+#interact
+
+
+

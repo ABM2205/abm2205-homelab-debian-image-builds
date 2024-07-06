@@ -1,0 +1,16 @@
+#!/usr/bin/expect -f
+
+set USER [lindex $argv 0]
+set SSH_PUB_KEY_PATH [lindex $argv 1]
+set SSH_PORT [lindex $argv 2]
+set SSH_HOST [lindex $argv 3]
+
+spawn ssh-copy-id \
+    -p $SSH_PORT \
+    -o StrictHostKeyChecking=accept-new \
+    -o UserKnownHostsFile=/dev/null \
+    -f \
+    -i $SSH_PUB_KEY_PATH \
+    $USER@$SSH_HOST
+
+expect "*password*" { send "$PASS\r" }

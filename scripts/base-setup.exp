@@ -1,0 +1,28 @@
+#!/usr/bin/expect -f
+
+# Wait enough (forever) until a long-time boot
+set timeout -1
+
+# Start the guest VM
+spawn qemu-system-x86_64 \
+-name build-machine-$MACHINE_NAME \
+-m 512 \
+-hda .cache/disks/$DISK_NAME \
+-cdrom .cache/images/$IMAGE_NAME \
+-boot d \
+-enable-kvm \
+-display none \
+-serial stdio \
+-vga virtio \
+-netdev user,id=net0,hostfwd=tcp::10022-:22 \
+-device e1000,netdev=net0 \
+-monitor none 
+
+expect "login: "
+send "root\n"
+
+expect "Password: "
+send "root\n"
+
+expect "# "
+send "shutdown -h now"

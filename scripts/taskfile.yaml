@@ -1,0 +1,66 @@
+version: "3"
+
+tasks:
+  workspace:init:
+    cmds:
+      - mkdir .cache
+    status:
+      - test -d .cache
+
+  workspace:cache-images:
+    deps:
+      - workspace:init
+    cmds:
+      - curl https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/x86_64/alpine-standard-3.20.0-x86_64.iso -o .cache/images/alpine-standard-3.20.0-x86_64.iso
+    status:
+      - test -f .cache/images/alpine-standard-3.20.0-x86_64.iso
+
+  cleanup:
+    cmds:
+      - rm -rf .cache/disks
+      - cmd: for pid in $(ps -ef | grep build-machine | awk '{print $2}'); do kill -9 $pid; done
+        ignore_error: true
+      - cmd: for pid in $(ps -ef | grep build-machine | awk '{print $3}'); do kill -9 $pid; done
+        ignore_error: true
+      - rm -f /tmp/*.in /tmp/*.out || true
+
+
+  default:
+    deps:
+      - workspace:cache-images
+  
+  create-machine:
+    cmds:
+      - mkdir -p .cache/disks || true
+      - qemu-img create -f qcow2 .cache/disks/{{.DISK_NAME}} {{.DISK_SIZE}}
+      - mkfifo /tmp/{{.MACHINE_NAME}}.in /tmp/{{.MACHINE_NAME}}.out
+      - |
+        qemu-system-x86_64 \
+        -kernel vmlinuz \
+        -name build-machine-{{.MACHINE_NAME}} \
+        -m 512 \
+        -hda .cache/disks/{{.DISK_NAME}} \
+        -cdrom .cache/images/{{.IMAGE_NAME}} \
+        -boot d \
+        -enable-kvm \
+        -display none \
+        -vga virtio \
+        -net nic,model=virtio \
+        -net user \
+        -serial pipe:/tmp/guest \
+        -monitor none \
+        -append "root=/dev/sda console=ttyS0"
+
+  
+  build:firefly:
+    deps:
+      - cleanup
+      - workspace:cache-images
+    cmds:
+      - task: create-machine
+        vars:
+          DISK_SIZE: 8G
+          DISK_NAME: alpine.qcow2
+          IMAGE_NAME: alpine-standard-3.20.0-x86_64.iso
+          MACHINE_NAME: alpine-firefly
+#      - defer: { task: cleanup }

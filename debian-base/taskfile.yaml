@@ -1,0 +1,159 @@
+version: "3"
+
+vars:
+  name: "debian-base"
+  source_disk_name: "debian-12-nocloud-amd64.qcow2"
+  machine_name: "{{.name}}-builder"
+  workspace: "{{.ROOT_DIR}}"
+  cache_directory: "{{.ROOT_DIR}}/.cache"
+  source_disk_path: "{{.cache_directory}}/{{.source_disk_name}}"
+  root_disk_name: "{{.name}}-root-disk.qcow2"
+  root_disk_path: "{{.cache_directory}}/{{.root_disk_name}}"
+  head_disk_name: "{{.name}}-head-disk.qcow2"
+  head_disk_path: "{{.cache_directory}}/{{.head_disk_name}}"
+  shared_scripts: "{{.ROOT_DIR}}/../scripts"
+  build_folder: "{{.ROOT_DIR}}/../builds"
+  disk_size: "30G"
+  ssh_port: "2222"
+  ssh_user: "amccann"
+  ssh_pass: "debian"
+  ssh_host: "localhost"
+  ssh_key_path: "/home/amccann/.ssh/"
+  ssh_key_name: "amccann"
+  ssh_public_key: "{{.ssh_key_path}}{{.ssh_key_name}}.pub"
+
+tasks:
+
+### BUILD ###
+  default:
+    deps:
+      - build
+
+
+  build:
+    deps:
+      - init
+    cmds:
+      - task: build:setup-ssh-user
+      - task: build:export-image
+      - defer: { task: system:kill-build-machines }
+
+
+  build:setup-ssh-user:
+    description: "Builds an image with basic user and pass login setup"
+    cmds:
+      - |
+        source {{.shared_scripts}}/functions.sh;
+        expect ./scripts/init-ssh-user.exp \
+          {{.ssh_user}} \
+          {{.ssh_pass}} \
+          {{.machine_name}} \
+          {{.head_disk_path}} \
+          {{.ssh_port}} \
+          {{.ROOT_DIR}} \
+          {{.ssh_public_key}} \
+          {{.shared_scripts}}
+
+
+  build:setup-ssh-key:
+    description: "Builds an image with ssh key login setup"
+    cmds:
+      - |
+        source {{.shared_scripts}}/functions.sh;
+  
+  build:export-image:
+    description: "exports the image artifact"
+    cmds:
+      - |
+        source {{.shared_scripts}}/functions.sh;
+        commit_and_create_disk {{.head_disk_path}} {{.root_disk_path}} {{.build_folder}} {{.name}}
+
+
+### INIT ###
+
+  init:
+    cmds:
+      - task: system:kill-build-machines
+      - task: init:download-source-images
+      - task: init:create-root-disk
+      - task: init:create-head-disk
+
+  workspace:create-cache-directory:
+    description: "Creates the cache directory"
+    cmds:
+      - mkdir -p {{.cache_directory}}
+    status:
+      - test -d {{.cache_directory}}
+
+  workspace:delete-root-image:
+    description: "Deletes the root qcow image"
+    cmds:
+      - rm -f {{.root_disk_path}}
+    status:
+      - test -f {{.root_disk_path}}
+
+  init:download-source-images:
+    description: "Downloads the source images"
+    deps:
+      - workspace:create-cache-directory
+    cmds:
+      - |
+        wget -O {{.source_disk_path}} \
+        https://cloud.debian.org/images/cloud/bookworm/latest/{{.source_disk_name}}
+    status:
+      - test -f {{.source_disk_path}}
+  
+  init:create-root-disk:
+    deps:
+      - workspace:delete-root-image
+      - init:download-source-images
+    description: "Creates the root disk"
+    cmds:
+      - |
+        source {{.shared_scripts}}/functions.sh;
+        cp {{.source_disk_path}} {{.root_disk_path}}
+  init:create-head-disk:
+    deps:
+      - init:create-root-disk
+    description: "Creates the head disk"
+    cmds:
+      - |
+        source {{.shared_scripts}}/functions.sh;
+        copy_cloud_disk {{.root_disk_name}} {{.head_disk_path}} {{.disk_size}}
+
+## UTIL ##
+
+  system:kill-build-machines:
+    description: "Kills all build machines"
+    ignore_error: true
+    cmds:
+      - |
+        source {{.shared_scripts}}/functions.sh;
+        kill_all_machines {{.machine_name}}
+
+
+  debug:
+    description: "Tests the image"
+    cmds:
+      - |
+        source {{.shared_scripts}}/functions.sh;
+        timestamp;
+        echo "{{.machine_name}}"
+  util:start-interactive-machine:
+    description: "Starts the machine"
+    cmds:
+      - |
+        source {{.shared_scripts}}/functions.sh;
+        create_cloud_machine {{.machine_name}} {{.head_disk_path}} {{.ssh_port}}
+  util:start-ssh-machine:
+    description: "Starts the machine in the background with ssh enabled"
+    cmds:
+      - |
+        source {{.shared_scripts}}/functions.sh;
+        create_ssh_machine {{.machine_name}} {{.head_disk_path}} {{.ssh_port}}
+
+  util:ssh:
+    description: "SSH into the machine"
+    cmds:
+      - ssh -p {{.ssh_port}} -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=accept-new {{.ssh_user}}@{{.ssh_host}}
+
